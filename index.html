@@ -1,12 +1,33 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PVOGame.ru — Защита Helios Station</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="PVOGame.ru — локальная браузерная sci-fi игра: абстрактная оборона вымышленной станции Helios Station. Полностью офлайн, без реальных данных." />
+  <title>PVOGame.ru — оборона Helios Station</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Игровая сцена: 4 canvas-слоя (terrain / world / effects / interaction) -->
+  <div id="stage" aria-label="Игровое поле сектора Helios">
+    <canvas id="layer-terrain"></canvas>
+    <canvas id="layer-world"></canvas>
+    <canvas id="layer-effects"></canvas>
+    <canvas id="layer-interaction"></canvas>
+  </div>
+
+  <!-- HTML HUD и экраны поверх canvas -->
+  <div id="ui-root"></div>
+
+  <noscript>
+    <div style="color:#dbe9ff;font-family:system-ui;padding:2rem;text-align:center">
+      Для запуска PVOGame.ru требуется включённый JavaScript.
+    </div>
+  </noscript>
+
+  <script type="module">
+    import { boot } from './js/game.js';
+    boot();
+  </script>
+</body>
 </html>
