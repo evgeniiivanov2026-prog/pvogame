@@ -1,7 +1,7 @@
 /* PVOGame.ru — генератор волн: кампания 12 волн + endless, предпросмотр состава. */
 
 import { CAMPAIGN_WAVES, TARGET_TYPES, ENDLESS_HP_STEP, ENDLESS_COUNT_STEP } from './config.js';
-import { makeRng, rngRange, clamp } from './utils.js';
+import { makeRng, rngRange, rngInt, clamp } from './utils.js';
 
 export class WaveManager {
   constructor(mode = 'campaign', difficultyMul = {}) {
@@ -20,7 +20,7 @@ export class WaveManager {
   }
 
   get waveNumber() { return this.waveIndex + 1; }
-  get isCampaignOver() { return this.mode === 'campaign' && this.waveIndex >= CAMPAWN_LIMIT; }
+  get isCampaignOver() { return this.mode === 'campaign' && this.waveIndex >= CAMPAIGN_WAVES.length; }
 
   setDifficulty(mul) { this.difficultyMul = mul; }
 
@@ -34,7 +34,7 @@ export class WaveManager {
         if (TARGET_TYPES[typeId].behavior === 'drift') c = Math.max(2, c); // рой не по одному
         return [typeId, c];
       });
-      return { groups, gap: w.gap, pause: w.pause, boss: !!w.boss, intro: !!w.intro };
+      return { groups, gap: w.gap, pause: w.pause, boss: !!w.boss, intro: !!w.intro, tutorial: w.tutorial || null };
     }
     // Endless: зацикливаем составы с ростом
     const loopPos = index % CAMPAIGN_WAVES.length;
@@ -45,7 +45,7 @@ export class WaveManager {
       const c = Math.max(1, Math.round(count * countMul));
       return [typeId, c];
     });
-    return { groups, gap: Math.max(0.35, base.gap * (1 - cycle * 0.08)), pause: base.pause, boss: loopPos === CAMPAIGN_WAVES.length - 1 };
+    return { groups, gap: Math.max(0.35, base.gap * (1 - cycle * 0.08)), pause: base.pause, boss: loopPos === CAMPAIGN_WAVES.length - 1, tutorial: null };
   }
 
   hpMultiplierFor(index) {
@@ -71,9 +71,23 @@ export class WaveManager {
     this.spawnQueue = [];
     let t = 0;
     for (const [typeId, count] of comp.groups) {
-      for (let i = 0; i < count; i++) {
-        this.spawnQueue.push({ typeId, time: t });
-        t += comp.gap * rngRange(this.rng, 0.7, 1.3);
+      const def = TARGET_TYPES[typeId];
+      if (def.behavior === 'drift' && def.groupMin) {
+        // Рой выпускается плотными стаями: несколько целей почти одновременно
+        let remaining = count;
+        while (remaining > 0) {
+          const salvo = Math.min(remaining, rngInt(this.rng, def.groupMin, def.groupMax || def.groupMin));
+          for (let i = 0; i < salvo; i++) {
+            this.spawnQueue.push({ typeId, time: t + rngRange(this.rng, 0, 0.35) });
+          }
+          remaining -= salvo;
+          t += comp.gap * 2.2;
+        }
+      } else {
+        for (let i = 0; i < count; i++) {
+          this.spawnQueue.push({ typeId, time: t });
+          t += comp.gap * rngRange(this.rng, 0.7, 1.3);
+        }
       }
       t += rngRange(this.rng, 0.8, 2.2); // пауза между группами
     }
@@ -81,6 +95,8 @@ export class WaveManager {
     this.totalThisWave = this.spawnQueue.length;
     this.targetsSpawned = 0;
     this.targetsResolved = 0;
+    this.killsThisWave = 0;
+    this.leaksThisWave = 0;
     this.waveClock = 0;
     this.state = 'active';
     return comp;
@@ -111,6 +127,7 @@ export class WaveManager {
   onTargetResolved(killed) {
     this.targetsResolved++;
     if (killed) this.killsThisWave = (this.killsThisWave || 0) + 1;
+    else this.leaksThisWave = (this.leaksThisWave || 0) + 1;
   }
 
   /* Вызывается из game.js когда очередь пуста и живых целей нет */
@@ -119,6 +136,7 @@ export class WaveManager {
     if (this.spawnQueue.length > 0 || aliveTargetsCount > 0) return false;
     this.state = 'cleared';
     this.waveIndex++;
+    // Волна зачищена раньше, чем успели появиться все цели — «досрочная» статистика корректна
     if (this.mode === 'campaign' && this.waveIndex >= CAMPAIGN_WAVES.length) {
       this.state = 'ended';
       return true;
@@ -131,5 +149,3 @@ export class WaveManager {
 
   remainingToSpawn() { return this.spawnQueue.length; }
 }
-
-const CAMPAWN_LIMIT = CAMPAIGN_WAVES.length;

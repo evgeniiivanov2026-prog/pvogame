@@ -22,7 +22,7 @@ export class Target {
     this.size = def.size;
     this.threat = def.threat;
     this.reward = Math.round(def.reward * (diffMul.creditMul || 1));
-    this.damage = def.damage;
+    this.damage = Math.round(def.damage * (diffMul.dmgMul || 1));
     this.armor = def.armor || 0;
     this.phantom = !!def.phantom;
     this.revealed = !this.phantom;
@@ -149,7 +149,20 @@ export class ParticleSystem {
     this.items = [];
   }
   setMax(n) { this.max = n; }
+
+  _recycle() {
+    // Быстрая очистка мёртвых частиц без O(n^2) splice в горячем цикле
+    if (this.items.length === 0) return;
+    let w = 0;
+    for (let i = 0; i < this.items.length; i++) {
+      const p = this.items[i];
+      if (p.life > 0) this.items[w++] = p;
+    }
+    this.items.length = w;
+  }
+
   spawnBurst(x, y, color, count = 8, speed = 90, life = 0.6) {
+    if (this.items.length >= this.max) this._recycle();
     const rng = makeRng((Date.now() ^ (x * 131 + y * 977)) >>> 0);
     for (let i = 0; i < count && this.items.length < this.max; i++) {
       const a = rng() * TAU;
@@ -161,6 +174,7 @@ export class ParticleSystem {
     }
   }
   spawnRing(x, y, color, radius) {
+    if (this.items.length >= this.max) this._recycle();
     if (this.items.length >= this.max) return;
     this.items.push({ ring: true, x, y, r0: 6, r1: radius, life: 0.5, maxLife: 0.5, color });
   }

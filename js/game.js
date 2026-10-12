@@ -236,7 +236,19 @@ export class Game {
 
   /* ── Ресурсы ──────────────────────────────────────────────────── */
   updateEnergyCapacity() {
-    this.energyCapacity = RESOURCES.energyCapacityBase + this.state.modules.length * 12;
+    this.energyCapacity = RESOURCES.energyCapacityBase
+      + this.state.modules.length * RESOURCES.energyCapacityPerModule;
+  }
+
+  /* Выработка сети: реактор + бонус за волны; растёт с номером волны (реалистичная модернизация) */
+  get reactorOutput() {
+    const diff = this.difficultyMul();
+    return (RESOURCES.reactorBasePerSec + this.waves.waveNumber * RESOURCES.energyRegenBonusPerWave)
+      * (diff.energyMul || 1);
+  }
+
+  spendEnergy(amount) {
+    this.state.energy = Math.max(0, this.state.energy - amount);
   }
 
   get totalEnergyUse() {
@@ -457,12 +469,12 @@ export class Game {
     const s = this.state;
     const diff = this.difficultyMul();
 
-    /* Экономика */
+    /* Экономика: кредиты капают пассивно; энергия — «заряд сети» с расходом на залпы */
     s.credits += RESOURCES.passiveIncomePerSec * (diff.creditMul || 1) * dt;
     this.updateEnergyCapacity();
     const use = this.totalEnergyUse;
-    s.energy = clamp(s.energy + RESOURCES.energyRegenPerSec * (diff.energyMul || 1) * dt, 0, this.energyCapacity);
-    this.energyDeficit = use > this.energyCapacity;
+    s.energy = clamp(s.energy + this.reactorOutput * dt, 0, this.energyCapacity);
+    this.energyDeficit = use > this.energyCapacity || s.energy < this.energyCapacity * 0.15;
     // При дефиците энергии боевые модули недобирают темп (мягкий игровой эффект)
     const powerRatio = this.energyDeficit ? clamp(this.energyCapacity / (use || 1), 0.4, 1) : 1;
 

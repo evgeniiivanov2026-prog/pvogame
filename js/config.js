@@ -32,12 +32,17 @@ export const RENDER = {
 export const RESOURCES = {
   integrityMax: 100,
   startIntegrity: 100,
-  startCredits: 240,
+  startCredits: 260,
+  /* Энергия — «заряд сети»: реактор даёт приток в секунду, ёмкость — буфер
+     на залпы модулей (Arc/Pulse тратят заряд при выстреле). */
   energyCapacityBase: 100,
-  energyRegenPerSec: 6.5,
+  energyCapacityPerModule: 8,
+  reactorBasePerSec: 7.5,          // базовая выработка сети, ед/с
+  energyRegenBonusPerWave: 0.35,   // реактор слегка растёт с волнами
+  shotEnergyCostMul: 1.0,          // множитель стоимости выстрела
   creditsPerKillBase: 6,
   waveClearBonusBase: 45,
-  passiveIncomePerSec: 0.9,
+  passiveIncomePerSec: 1.1,
   focusStart: 65,
   focusMax: 100,
   focusRegenPerSec: 0.55
@@ -101,31 +106,35 @@ export const FOCUS_BANDS = {
 export const TARGET_TYPES = {
   scout: {
     id: 'scout', name: 'Разведчик', en: 'Scout', color: '#7de3ff', shape: 'dart',
-    hp: 22, speed: 74, threat: 6, reward: 7, damage: 4, size: 12,
+    hp: 26, speed: 66, threat: 6, reward: 8, damage: 5, size: 12,
     behavior: 'straight', desc: 'Быстрый одиночный сигнал. Идёт прямо на станцию.'
   },
   swarm: {
     id: 'swarm', name: 'Рой', en: 'Swarm Unit', color: '#ffd166', shape: 'triad',
-    hp: 10, speed: 58, threat: 3, reward: 3, damage: 2, size: 8,
+    hp: 12, speed: 52, threat: 3, reward: 4, damage: 3, size: 8,
     behavior: 'drift', desc: 'Слабые элементы, прибывают плотными группами.',
     groupMin: 4, groupMax: 8
   },
   carrier: {
     id: 'carrier', name: 'Бронированный носитель', en: 'Armored Carrier', color: '#ff8fa3', shape: 'hex',
-    hp: 130, speed: 26, threat: 18, reward: 24, damage: 14, size: 24,
-    behavior: 'straight', armor: 3, desc: 'Медленный прочный объект. Поглощает урон бронёй.'
+    hp: 150, speed: 24, threat: 18, reward: 26, damage: 16, size: 24,
+    behavior: 'straight', armor: 3, splitOnDeath: { typeId: 'wisp', count: 2 },
+    desc: 'Медленный прочный объект. Поглощает урон бронёй, при разрушении выпускает искры.'
   },
   decoy: {
     id: 'decoy', name: 'Ложный сигнал', en: 'Decoy', color: '#b892ff', shape: 'ghost',
-    hp: 14, speed: 46, threat: 2, reward: 2, damage: 0, size: 14,
+    hp: 14, speed: 42, threat: 2, reward: 2, damage: 0, size: 14,
     behavior: 'weave', phantom: true, desc: 'Неопознанный сигнал: путает наведение и повышает стресс.'
   },
   wisp: {
     id: 'wisp', name: 'Сигнальная искра', en: 'Signal Wisp', color: '#7af0c8', shape: 'spark',
-    hp: 30, speed: 96, threat: 8, reward: 9, damage: 5, size: 10,
+    hp: 34, speed: 88, threat: 8, reward: 10, damage: 6, size: 10,
     behavior: 'zigzag', regenPerSec: 1.2, desc: 'Извивающийся импульс, медленно восстанавливается.'
   }
 };
+
+/* Стоимость выстрела модуля в единицах заряда сети (по базовому энергопотреблению) */
+export const SHOT_ENERGY_COST = { arc: 1.1, pulse: 1.5 };
 
 /* ── Защитные модули ────────────────────────────────────────────── */
 export const MODULE_TYPES = {
@@ -152,22 +161,22 @@ export const MODULE_TYPES = {
   },
   arc: {
     id: 'arc', name: 'Arc Interceptor', ru: 'Дуговой перехватчик', color: '#ffb347', icon: '⚡',
-    cost: 85, energy: 10, range: 340, cooldown: 1.1, damage: 16,
+    cost: 85, energy: 10, range: 340, cooldown: 1.1, damage: 18,
     role: 'kinetic', splash: 0,
-    desc: 'Одиночные быстрые разряды по приоритетной цели.',
+    desc: 'Быстрые точечные разряды по приоритетной цели. Расходует заряд сети.',
     upgrades: [
-      { name: 'Форсирование', cost: 70, mods: { cooldownMul: 0.72, damageAdd: 4 } },
-      { name: 'Три излучателя', cost: 130, mods: { multiTarget: 2, damageAdd: 6 } }
+      { name: 'Форсирование', cost: 70, mods: { cooldownMul: 0.72, damageAdd: 5 } },
+      { name: 'Три излучателя', cost: 130, mods: { multiTarget: 2, damageAdd: 7 } }
     ]
   },
   pulse: {
     id: 'pulse', name: 'Pulse Array', ru: 'Импульсная решётка', color: '#ff6b8a', icon: '✷',
-    cost: 120, energy: 16, range: 230, cooldown: 2.6, damage: 13,
+    cost: 120, energy: 16, range: 230, cooldown: 2.6, damage: 15,
     role: 'area', splash: 110,
     desc: 'Периодический импульс по всем целям в радиусе. Эффективен против роя.',
     upgrades: [
       { name: 'Широкий фронт', cost: 90, mods: { splashMul: 1.35, rangeMul: 1.15 } },
-      { name: 'Пиковая мощность', cost: 150, mods: { damageAdd: 10, cooldownMul: 0.85 } }
+      { name: 'Пиковая мощность', cost: 150, mods: { damageAdd: 12, cooldownMul: 0.85 } }
     ]
   },
   guardian: {
@@ -194,28 +203,29 @@ export const TARGETING = {
 
 /* ── Сложность ──────────────────────────────────────────────────── */
 export const DIFFICULTY_PRESETS = {
-  calm:       { name: 'Спокойный',      hpMul: 0.75, speedMul: 0.85, countMul: 0.75, stressMul: 0.6, creditMul: 1.25, energyMul: 1.2 },
-  standard:   { name: 'Стандартный',    hpMul: 1.0,  speedMul: 1.0,  countMul: 1.0,  stressMul: 1.0, creditMul: 1.0,  energyMul: 1.0 },
-  heavy:      { name: 'Высокая нагрузка', hpMul: 1.3, speedMul: 1.12, countMul: 1.25, stressMul: 1.35, creditMul: 0.95, energyMul: 0.9 },
-  expert:     { name: 'Экспертный',     hpMul: 1.65, speedMul: 1.25, countMul: 1.5,  stressMul: 1.7, creditMul: 0.85, energyMul: 0.8 },
-  custom:     { name: 'Пользовательский', hpMul: 1.0, speedMul: 1.0, countMul: 1.0, stressMul: 1.0, creditMul: 1.0, energyMul: 1.0 }
+  calm:     { name: 'Спокойный',        hpMul: 0.75, speedMul: 0.85, countMul: 0.75, stressMul: 0.6,  creditMul: 1.25, energyMul: 1.2, dmgMul: 0.7 },
+  standard: { name: 'Стандартный',      hpMul: 1.0,  speedMul: 1.0,  countMul: 1.0,  stressMul: 1.0,  creditMul: 1.0,  energyMul: 1.0, dmgMul: 1.0 },
+  heavy:    { name: 'Высокая нагрузка', hpMul: 1.3,  speedMul: 1.12, countMul: 1.25, stressMul: 1.35, creditMul: 0.95, energyMul: 0.9, dmgMul: 1.2 },
+  expert:   { name: 'Экспертный',       hpMul: 1.65, speedMul: 1.25, countMul: 1.5,  stressMul: 1.7,  creditMul: 0.85, energyMul: 0.8, dmgMul: 1.4 },
+  custom:   { name: 'Пользовательский', hpMul: 1.0,  speedMul: 1.0,  countMul: 1.0,  stressMul: 1.0,  creditMul: 1.0,  energyMul: 1.0, dmgMul: 1.0 }
 };
 
 /* ── Волны кампании ─────────────────────────────────────────────── */
 // Каждая волна: состав (тип: количество), интервал спавна, пауза до следующей волны.
+// Вводные волны построены как учебный полигон: сначала один тип, затем комбинации.
 export const CAMPAIGN_WAVES = [
-  { intro: true,  groups: [['scout', 4]],                                     gap: 1.6, pause: 16 },
-  { groups: [['scout', 6], ['swarm', 6]],                                     gap: 1.4, pause: 14 },
-  { groups: [['swarm', 10], ['scout', 4]],                                     gap: 1.2, pause: 14 },
-  { groups: [['carrier', 1], ['scout', 6]],                                    gap: 1.4, pause: 16 },
-  { groups: [['decoy', 4], ['scout', 6], ['swarm', 8]],                        gap: 1.1, pause: 15 },
-  { groups: [['wisp', 6], ['carrier', 2]],                                     gap: 1.2, pause: 16 },
-  { groups: [['swarm', 14], ['decoy', 4]],                                     gap: 0.9, pause: 15 },
-  { groups: [['carrier', 3], ['wisp', 6], ['scout', 6]],                       gap: 1.0, pause: 17 },
-  { groups: [['decoy', 6], ['wisp', 8], ['swarm', 10]],                        gap: 0.85, pause: 16 },
-  { groups: [['carrier', 4], ['scout', 10], ['wisp', 6]],                      gap: 0.9, pause: 18 },
-  { groups: [['swarm', 18], ['decoy', 6], ['carrier', 3], ['wisp', 6]],        gap: 0.7, pause: 18 },
-  { boss: true, groups: [['carrier', 6], ['wisp', 10], ['scout', 10], ['decoy', 6], ['swarm', 16]], gap: 0.6, pause: 20 }
+  { intro: true,  tutorial: 'Разведчики идут прямо на станцию. Поставьте Arc Interceptor ближе к средней зоне.', groups: [['scout', 4]], gap: 1.6, pause: 18 },
+  { tutorial: 'Рой слаб поодиночке, но плотный. Pulse Array выкашивает группы целиком.', groups: [['scout', 6], ['swarm', 6]], gap: 1.4, pause: 16 },
+  { tutorial: 'Ложные сигналы шумят в сети. Sentinel Sensor раскроет их и усилит соседей.', groups: [['decoy', 3], ['scout', 6]], gap: 1.3, pause: 16 },
+  { tutorial: 'Носитель бронирован и выпускает искры при разрушении. Держите заряд сети.', groups: [['carrier', 1], ['scout', 6]], gap: 1.4, pause: 18 },
+  { groups: [['swarm', 10], ['scout', 6], ['wisp', 4]], gap: 1.1, pause: 16 },
+  { groups: [['wisp', 6], ['carrier', 2], ['decoy', 3]], gap: 1.2, pause: 16 },
+  { groups: [['swarm', 14], ['decoy', 4], ['scout', 6]], gap: 0.95, pause: 16 },
+  { groups: [['carrier', 3], ['wisp', 6], ['scout', 8]], gap: 1.0, pause: 17 },
+  { groups: [['decoy', 6], ['wisp', 8], ['swarm', 10]], gap: 0.85, pause: 16 },
+  { groups: [['carrier', 4], ['scout', 10], ['wisp', 6]], gap: 0.9, pause: 18 },
+  { groups: [['swarm', 18], ['decoy', 6], ['carrier', 3], ['wisp', 6]], gap: 0.7, pause: 18 },
+  { boss: true, tutorial: 'Финальный накат: смешанные группы со всех направлений. Держите Focus.', groups: [['carrier', 6], ['wisp', 10], ['scout', 10], ['decoy', 6], ['swarm', 16]], gap: 0.6, pause: 20 }
 ];
 export const ENDLESS_HP_STEP = 0.14;   // рост HP за волну после 12-й
 export const ENDLESS_COUNT_STEP = 0.1; // рост числа целей за волну после 12-й

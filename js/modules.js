@@ -1,6 +1,6 @@
 /* PVOGame.ru — защитные модули: постройка, апгрейды, стрельба, приоритеты. */
 
-import { MODULE_TYPES, FIELD, TARGETING, SELL_REFUND, MAX_MODULE_LEVEL } from './config.js';
+import { MODULE_TYPES, FIELD, TARGETING, SELL_REFUND, MAX_MODULE_LEVEL, SHOT_ENERGY_COST, RESOURCES } from './config.js';
 import { dist, clamp } from './utils.js';
 import { computePriority } from './entities.js';
 
@@ -156,6 +156,17 @@ export class DefenseModule {
 
     const targets_ = this.pickTargets(targets, gameTime, ctx);
     if (!targets_.length) return events;
+
+    /* Заряд сети — реальное ограничение огня. Если энергии на залп не хватает,
+       модуль ждёт подзарядки (как боекомплект/питание в реальных системах). */
+    const shotCost = (SHOT_ENERGY_COST[this.typeId] || 1) * this.energyUse * 0.35 * (RESOURCES.shotEnergyCostMul || 1);
+    if ((ctx.energy ?? Infinity) < shotCost) {
+      this.starved = true;
+      this.cooldownLeft = Math.min(this.cooldownMax || 0.5, 0.35); // короткая повторная попытка
+      return events;
+    }
+    if (ctx.spendEnergy) ctx.spendEnergy(shotCost);
+    this.starved = false;
 
     const primary = targets_[0];
     this.angle = Math.atan2(primary.y - this.y, primary.x - this.x);
